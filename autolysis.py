@@ -8,9 +8,8 @@ import argparse
 import numpy as np
 
 # Replace the default OpenAI API URL with the AI Proxy URL
-OPENAI_API_BASE = "https://aiproxy.sanand.workers.dev/openai/"
-AIPROXY_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjIyZjEwMDE1OTVAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.lZmCzaWrx7REtBJTm3lh2xxY4TCd4E76foK43oz69wc"  # Automatically fetch the token from the environment
-
+OPENAI_API_BASE = "https://aiproxy.sanand.workers.dev/openai/v1"
+AIPROXY_TOKEN = os.getenv("AIPROXY_TOKEN")
 if not AIPROXY_TOKEN:
     print("Error: AIPROXY_TOKEN environment variable is not set.")
     sys.exit(1)
@@ -96,13 +95,11 @@ def get_llm_analysis(df_info, charts):
     4. Implications and possible actions.
     """
     try:
-        # Manually override OpenAI's endpoint to ensure the path is correct
-        openai.api_base = "https://aiproxy.sanand.workers.dev/openai/v1"
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}]
         )
-        return response["choices"][0]["message"]["content"]
+        return response.choices[0].message["content"]
     except Exception as e:
         print(f"Error with LLM analysis: {e}")
         sys.exit(1)
