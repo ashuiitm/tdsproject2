@@ -7,16 +7,23 @@ import openai
 import argparse
 import numpy as np
 
-# Ensure API key is set
-AIPROXY_TOKEN = os.environ.get("AIPROXY_TOKEN")
+# Replace the default OpenAI API URL with the AI Proxy URL
+OPENAI_API_BASE = "https://aiproxy.sanand.workers.dev/openai/"
+AIPROXY_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjIyZjEwMDE1OTVAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.lZmCzaWrx7REtBJTm3lh2xxY4TCd4E76foK43oz69wc"  # Automatically fetch the token from the environment
+
 if not AIPROXY_TOKEN:
     print("Error: AIPROXY_TOKEN environment variable is not set.")
     sys.exit(1)
 
+# Set OpenAI configuration
+openai.api_base = OPENAI_API_BASE
+openai.api_key = AIPROXY_TOKEN
+
+print("AIPROXY Token successfully loaded and OpenAI client initialized.")
 
 def load_data(file_path):
     try:
-        df = pd.read_csv(file_path , encoding="ISO-8859-1")
+        df = pd.read_csv(file_path, encoding="ISO-8859-1")
         print(f"Successfully loaded {file_path}")
         return df
     except Exception as e:
@@ -35,14 +42,15 @@ def basic_analysis(df):
         "sample_data": sample_data
     }
 
-def correlation_analysis(df):
+def correlation_analysis(df, output_dir):
     numeric_cols = df.select_dtypes(include=["float", "int"])
     if numeric_cols.shape[1] > 1:
         corr_matrix = numeric_cols.corr()
         plt.figure(figsize=(10, 8))
         sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", fmt=".2f")
         plt.title("Correlation Matrix")
-        plt.savefig("correlation_matrix.png")
+        correlation_file = os.path.join(output_dir, "correlation_matrix.png")
+        plt.savefig(correlation_file)
         plt.close()
         return corr_matrix.to_dict()
     return None
@@ -59,7 +67,7 @@ def outlier_detection(df):
         outliers[col] = numeric_cols[(numeric_cols[col] < lower_bound) | (numeric_cols[col] > upper_bound)][col].tolist()
     return outliers
 
-def visualize_data(df):
+def visualize_data(df, output_dir):
     numeric_cols = df.select_dtypes(include=["float", "int"])
     if not numeric_cols.empty:
         for col in numeric_cols.columns:
@@ -68,7 +76,7 @@ def visualize_data(df):
             plt.title(f"Distribution of {col}")
             plt.xlabel(col)
             plt.ylabel("Frequency")
-            filename = f"{col}_distribution.png"
+            filename = os.path.join(output_dir, f"{col}_distribution.png")
             plt.savefig(filename)
             plt.close()
 
@@ -80,7 +88,7 @@ def get_llm_analysis(df_info, charts):
     Summary Statistics: {df_info['summary']}
     Sample Data: {df_info['sample_data']}
     Charts Generated: {charts}
-    
+
     Write a story summarizing:
     1. A description of the dataset.
     2. Key analyses performed.
@@ -88,6 +96,8 @@ def get_llm_analysis(df_info, charts):
     4. Implications and possible actions.
     """
     try:
+        # Manually override OpenAI's endpoint to ensure the path is correct
+        openai.api_base = "https://aiproxy.sanand.workers.dev/openai/v1"
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}]
@@ -97,10 +107,15 @@ def get_llm_analysis(df_info, charts):
         print(f"Error with LLM analysis: {e}")
         sys.exit(1)
 
-def save_story(story):
-    with open("README.md", "w") as f:
-        f.write(story)
-    print("Story saved to README.md.")
+def save_story_to_folders(story, base_dir):
+    folders = ["goodreads", "happiness", "media"]
+    for folder in folders:
+        folder_path = os.path.join(base_dir, folder)
+        os.makedirs(folder_path, exist_ok=True)
+        readme_path = os.path.join(folder_path, "README.md")
+        with open(readme_path, "w") as f:
+            f.write(story)
+        print(f"Story saved to {readme_path}")
 
 def main():
     # Command-line argument parsing
@@ -114,6 +129,10 @@ def main():
         print(f"Error: File {file_path} does not exist.")
         sys.exit(1)
 
+    # Create a unique folder for this run
+    base_folder = os.path.splitext(os.path.basename(file_path))[0]
+    os.makedirs(base_folder, exist_ok=True)
+
     # Data loading
     df = load_data(file_path)
 
@@ -121,7 +140,9 @@ def main():
     df_info = basic_analysis(df)
 
     # Correlation analysis
-    correlation_data = correlation_analysis(df)
+    correlation_dir = os.path.join(base_folder, "media")
+    os.makedirs(correlation_dir, exist_ok=True)
+    correlation_data = correlation_analysis(df, correlation_dir)
     if correlation_data:
         df_info["correlation"] = correlation_data
 
@@ -130,14 +151,16 @@ def main():
     df_info["outliers"] = outliers
 
     # Visualization
-    visualize_data(df)
-    generated_charts = ["correlation_matrix.png"] + [f"{col}_distribution.png" for col in df.select_dtypes(include=["float", "int"]).columns]
+    visualize_data(df, correlation_dir)
+    generated_charts = [
+        os.path.join("media", "correlation_matrix.png")
+    ] + [os.path.join("media", f"{col}_distribution.png") for col in df.select_dtypes(include=["float", "int"]).columns]
 
     # LLM storytelling
     story = get_llm_analysis(df_info, generated_charts)
 
-    # Save story
-    save_story(story)
+    # Save story to folder structure
+    save_story_to_folders(story, base_folder)
 
 if __name__ == "__main__":
     main()
